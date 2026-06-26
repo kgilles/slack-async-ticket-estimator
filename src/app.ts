@@ -37,6 +37,13 @@ app.command("/estimate", async ({ command, ack, respond, client }) => {
     blocks: votingBlocks(messageTs, ticket, 0),
     text: `Estimating: ${ticket}`,
   });
+
+  // Seed a thread so teammates know where to discuss
+  await client.chat.postMessage({
+    channel: command.channel_id,
+    thread_ts: messageTs,
+    text: "Use this thread to discuss the ticket before or after voting.",
+  });
 });
 
 const VOTE_VALUES: Record<string, string> = {
@@ -107,5 +114,5 @@ app.action("reveal", async ({ action, body, ack, client }) => {
 (async () => {
   const port = Number(process.env.PORT) || 3000;
   await app.start(port);
-  console.log(`lazy-finch running on port ${port}`);
+  console.log(`slack-async-ticket-estimator running on port ${port}`);
 })();

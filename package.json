@@ -1,0 +1,19 @@
+{
+  "name": "lazy-finch",
+  "version": "1.0.0",
+  "description": "Async Fibonacci story point estimation for Slack",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/app.js",
+    "dev": "tsx watch src/app.ts"
+  },
+  "dependencies": {
+    "@slack/bolt": "^4.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

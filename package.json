@@ -9,7 +9,8 @@
     "dev": "tsx watch src/app.ts"
   },
   "dependencies": {
-    "@slack/bolt": "^4.1.1"
+    "@slack/bolt": "^4.1.1",
+    "dotenv": "^17.4.2"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

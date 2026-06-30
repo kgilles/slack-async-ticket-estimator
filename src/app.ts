@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { App } from "@slack/bolt";
 import { createSession, getSession, deleteSession } from "./sessions.js";
 import { votingBlocks, revealedBlocks } from "./blocks.js";

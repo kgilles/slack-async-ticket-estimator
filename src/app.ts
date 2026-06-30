@@ -71,7 +71,8 @@ app.action(/^vote_/, async ({ action, body, ack, client }) => {
     client.chat.postEphemeral({
       channel: session.channelId,
       user: body.user.id,
-      text: `You voted *${pointValue}*. Click a different button to change your vote.`,
+      text: `You voted ${pointValue}`,
+      blocks: votingBlocks(messageTs, session.ticket, session.votes.size, session.discussLive.size, pointValue),
     }),
   ]);
 });
@@ -107,6 +108,12 @@ app.action("discuss_live", async ({ action, body, ack, client }) => {
       ts: messageTs,
       blocks: votingBlocks(messageTs, session.ticket, session.votes.size, session.discussLive.size),
       text: `Estimating: ${session.ticket}`,
+    }),
+    client.chat.postEphemeral({
+      channel: session.channelId,
+      user: userId,
+      text: "You flagged this ticket for live discussion",
+      blocks: votingBlocks(messageTs, session.ticket, session.votes.size, session.discussLive.size, undefined, true),
     }),
   ]);
 });

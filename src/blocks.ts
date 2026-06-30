@@ -3,11 +3,23 @@ import type { KnownBlock } from "@slack/web-api";
 const POINTS_ROW1 = ["1", "2", "3", "5"];
 const POINTS_ROW2 = ["8", "13", "21", "?"];
 
+function makeVoteButton(p: string, messageTs: string, selected: boolean) {
+  return {
+    type: "button" as const,
+    text: { type: "plain_text" as const, text: p },
+    action_id: `vote_${p === "?" ? "question" : p}`,
+    value: messageTs,
+    ...(selected ? { style: "primary" as const } : {}),
+  };
+}
+
 export function votingBlocks(
   messageTs: string,
   ticket: string,
   voteCount: number,
-  discussCount: number
+  discussCount: number,
+  selectedVote?: string,     // set on ephemerals to highlight the user's pick
+  discussLiveSelected?: boolean
 ): KnownBlock[] {
   const statusParts = [`*${voteCount}* voted`];
   if (discussCount > 0)
@@ -25,22 +37,12 @@ export function votingBlocks(
     {
       type: "actions",
       block_id: `votes_row1_${messageTs}`,
-      elements: POINTS_ROW1.map((p) => ({
-        type: "button" as const,
-        text: { type: "plain_text" as const, text: p },
-        action_id: `vote_${p}`,
-        value: messageTs,
-      })),
+      elements: POINTS_ROW1.map((p) => makeVoteButton(p, messageTs, p === selectedVote)),
     },
     {
       type: "actions",
       block_id: `votes_row2_${messageTs}`,
-      elements: POINTS_ROW2.map((p) => ({
-        type: "button" as const,
-        text: { type: "plain_text" as const, text: p },
-        action_id: `vote_${p === "?" ? "question" : p}`,
-        value: messageTs,
-      })),
+      elements: POINTS_ROW2.map((p) => makeVoteButton(p, messageTs, p === selectedVote)),
     },
     {
       type: "actions",
@@ -51,13 +53,14 @@ export function votingBlocks(
           text: { type: "plain_text", text: "Discuss Live" },
           action_id: "discuss_live",
           value: messageTs,
+          ...(discussLiveSelected ? { style: "primary" as const } : {}),
         },
         {
           type: "button",
           text: { type: "plain_text", text: "Reveal Votes" },
           action_id: "reveal",
           value: messageTs,
-          style: "primary",
+          style: "primary" as const,
         },
       ],
     },

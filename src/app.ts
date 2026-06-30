@@ -17,7 +17,7 @@ function allVotersResponded(session: Session): boolean {
   );
 }
 
-async function doReveal(session: Session, client: WebClient) {
+async function doReveal(session: Session, client: WebClient, auto = false) {
   const allUserIds = new Set([...session.votes.keys(), ...session.discussLive]);
   const userNames = new Map<string, string>();
   await Promise.all(
@@ -39,6 +39,14 @@ async function doReveal(session: Session, client: WebClient) {
     blocks: revealedBlocks(session.ticket, session.votes, userNames, session.discussLive),
     text: `Estimation complete: ${session.ticket}`,
   });
+
+  if (auto) {
+    await client.chat.postMessage({
+      channel: session.channelId,
+      thread_ts: session.messageTs,
+      text: "All votes are in — results revealed above.",
+    });
+  }
 
   deleteSession(session.messageTs);
 }
@@ -105,7 +113,7 @@ app.action(/^vote_/, async ({ action, body, ack, client }) => {
     await client.chat.postEphemeral({
       channel: session.channelId,
       user: userId,
-      text: "You're not a voter in this estimation session.",
+      text: "You were not added as a voter in this estimation session.",
     });
     return;
   }
@@ -129,7 +137,7 @@ app.action(/^vote_/, async ({ action, body, ack, client }) => {
     }),
   ]);
 
-  if (allVotersResponded(session)) await doReveal(session, client);
+  if (allVotersResponded(session)) await doReveal(session, client, true);
 });
 
 // ── Discuss Live ───────────────────────────────────────────────────────────
@@ -147,7 +155,7 @@ app.action("discuss_live", async ({ action, body, ack, client }) => {
     await client.chat.postEphemeral({
       channel: session.channelId,
       user: userId,
-      text: "You're not a voter in this estimation session.",
+      text: "You were not added as a voter in this estimation session.",
     });
     return;
   }
@@ -180,7 +188,7 @@ app.action("discuss_live", async ({ action, body, ack, client }) => {
     }),
   ]);
 
-  if (allVotersResponded(session)) await doReveal(session, client);
+  if (allVotersResponded(session)) await doReveal(session, client, true);
 });
 
 // ── Manual reveal ──────────────────────────────────────────────────────────

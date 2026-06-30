@@ -4,13 +4,14 @@ export interface Session {
   hostUserId: string;
   ticket: string;
   votes: Map<string, string>; // userId → point value
+  discussLive: Set<string>;   // userIds who want to discuss live
   revealed: boolean;
 }
 
 const sessions = new Map<string, Session>();
 
-export function createSession(data: Omit<Session, "votes" | "revealed">): Session {
-  const session: Session = { ...data, votes: new Map(), revealed: false };
+export function createSession(data: Omit<Session, "votes" | "discussLive" | "revealed">): Session {
+  const session: Session = { ...data, votes: new Map(), discussLive: new Set(), revealed: false };
   sessions.set(data.messageTs, session);
   return session;
 }

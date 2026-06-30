@@ -2,12 +2,24 @@ import type { KnownBlock } from "@slack/web-api";
 
 const POINTS = ["1", "2", "3", "5", "8", "13", "21", "?"];
 
-export function votingBlocks(messageTs: string, ticket: string, voteCount: number): KnownBlock[] {
+export function votingBlocks(
+  messageTs: string,
+  ticket: string,
+  voteCount: number,
+  discussCount: number
+): KnownBlock[] {
+  const statusParts = [`*${voteCount}* voted`];
+  if (discussCount > 0)
+    statusParts.push(`*${discussCount}* want${discussCount === 1 ? "s" : ""} to discuss live`);
+
   return [
     {
       type: "section",
       block_id: `estimate_${messageTs}`,
-      text: { type: "mrkdwn", text: `*Estimating:* ${ticket}` },
+      text: {
+        type: "mrkdwn",
+        text: `*Estimating:* ${ticket}\n_${statusParts.join(" · ")} — results hidden until revealed_`,
+      },
     },
     {
       type: "actions",
@@ -20,16 +32,18 @@ export function votingBlocks(messageTs: string, ticket: string, voteCount: numbe
       })),
     },
     {
-      type: "context",
-      elements: [{ type: "mrkdwn", text: `_${voteCount} voted — results hidden until revealed_` }],
-    },
-    {
       type: "actions",
       block_id: `control_${messageTs}`,
       elements: [
         {
           type: "button",
-          text: { type: "plain_text", text: "Reveal" },
+          text: { type: "plain_text", text: "Discuss Live" },
+          action_id: "discuss_live",
+          value: messageTs,
+        },
+        {
+          type: "button",
+          text: { type: "plain_text", text: "Reveal Votes" },
           action_id: "reveal",
           value: messageTs,
           style: "primary",
@@ -42,14 +56,22 @@ export function votingBlocks(messageTs: string, ticket: string, voteCount: numbe
 export function revealedBlocks(
   ticket: string,
   votes: Map<string, string>,
-  userNames: Map<string, string>
+  userNames: Map<string, string>,
+  discussLive: Set<string>
 ): KnownBlock[] {
-  const lines = [...votes.entries()]
+  const voteLines = [...votes.entries()]
     .map(([uid, val]) => `• ${userNames.get(uid) ?? uid}  →  *${val}*`)
     .join("\n");
 
   const values = [...votes.values()].filter((v) => v !== "?").map(Number);
   const avg = values.length ? (values.reduce((a, b) => a + b, 0) / values.length).toFixed(1) : "—";
+
+  const discussLine =
+    discussLive.size > 0
+      ? `\n\n:speech_balloon: *Wants to discuss live:* ${[...discussLive]
+          .map((uid) => userNames.get(uid) ?? uid)
+          .join(", ")}`
+      : "";
 
   return [
     {
@@ -60,7 +82,7 @@ export function revealedBlocks(
       type: "section",
       text: {
         type: "mrkdwn",
-        text: lines.length ? lines : "_No votes were cast._",
+        text: (voteLines || "_No votes were cast._") + discussLine,
       },
     },
     {

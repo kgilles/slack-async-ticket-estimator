@@ -19,7 +19,7 @@ app.command("/estimate", async ({ command, ack, respond, client }) => {
 
   const result = await client.chat.postMessage({
     channel: command.channel_id,
-    blocks: votingBlocks("placeholder", ticket, 0),
+    blocks: votingBlocks("placeholder", ticket, 0, 0),
     text: `Estimating: ${ticket}`,
   });
 
@@ -35,7 +35,7 @@ app.command("/estimate", async ({ command, ack, respond, client }) => {
   await client.chat.update({
     channel: command.channel_id,
     ts: messageTs,
-    blocks: votingBlocks(messageTs, ticket, 0),
+    blocks: votingBlocks(messageTs, ticket, 0, 0),
     text: `Estimating: ${ticket}`,
   });
 
@@ -43,33 +43,73 @@ app.command("/estimate", async ({ command, ack, respond, client }) => {
   await client.chat.postMessage({
     channel: command.channel_id,
     thread_ts: messageTs,
-    text: "Use this thread to discuss the ticket before or after voting.",
+    text: "Use this thread to discuss the ticket.",
   });
 });
 
-const VOTE_VALUES: Record<string, string> = {
-  vote_1: "1", vote_2: "2", vote_3: "3", vote_5: "5",
-  vote_8: "8", vote_13: "13", vote_21: "21", vote_question: "?",
-};
+// Matches vote_1, vote_2, vote_3, vote_5, vote_8, vote_13, vote_21, vote_question
+app.action(/^vote_/, async ({ action, body, ack, client }) => {
+  await ack();
 
-for (const [actionId, pointValue] of Object.entries(VOTE_VALUES)) {
-  app.action(actionId, async ({ action, body, ack, client }) => {
-    await ack();
+  const act = action as { action_id: string; value?: string };
+  const raw = act.action_id.replace(/^vote_/, "");
+  const pointValue = raw === "question" ? "?" : raw;
+  const messageTs = act.value!;
 
-    const messageTs = (action as { value?: string }).value!;
-    const session = getSession(messageTs);
-    if (!session || session.revealed) return;
+  const session = getSession(messageTs);
+  if (!session || session.revealed) return;
 
-    session.votes.set(body.user.id, pointValue);
+  session.votes.set(body.user.id, pointValue);
 
-    await client.chat.update({
+  await Promise.all([
+    client.chat.update({
       channel: session.channelId,
       ts: messageTs,
-      blocks: votingBlocks(messageTs, session.ticket, session.votes.size),
+      blocks: votingBlocks(messageTs, session.ticket, session.votes.size, session.discussLive.size),
       text: `Estimating: ${session.ticket}`,
+    }),
+    client.chat.postEphemeral({
+      channel: session.channelId,
+      user: body.user.id,
+      text: `You voted *${pointValue}*. Click a different button to change your vote.`,
+    }),
+  ]);
+});
+
+app.action("discuss_live", async ({ action, body, ack, client }) => {
+  await ack();
+
+  const messageTs = (action as { value?: string }).value!;
+  const session = getSession(messageTs);
+  if (!session || session.revealed) return;
+
+  const userId = body.user.id;
+
+  if (session.discussLive.has(userId)) {
+    await client.chat.postEphemeral({
+      channel: session.channelId,
+      user: userId,
+      text: "You've already flagged this ticket for live discussion.",
     });
-  });
-}
+    return;
+  }
+
+  session.discussLive.add(userId);
+
+  await Promise.all([
+    client.chat.postMessage({
+      channel: session.channelId,
+      thread_ts: messageTs,
+      text: `<@${userId}> wants to discuss this ticket live.`,
+    }),
+    client.chat.update({
+      channel: session.channelId,
+      ts: messageTs,
+      blocks: votingBlocks(messageTs, session.ticket, session.votes.size, session.discussLive.size),
+      text: `Estimating: ${session.ticket}`,
+    }),
+  ]);
+});
 
 app.action("reveal", async ({ action, body, ack, client }) => {
   await ack();
@@ -87,10 +127,11 @@ app.action("reveal", async ({ action, body, ack, client }) => {
     return;
   }
 
-  // Resolve display names
+  // Resolve display names for all voters + discuss-live users
+  const allUserIds = new Set([...session.votes.keys(), ...session.discussLive]);
   const userNames = new Map<string, string>();
   await Promise.all(
-    [...session.votes.keys()].map(async (uid) => {
+    [...allUserIds].map(async (uid) => {
       try {
         const info = await client.users.info({ user: uid });
         userNames.set(uid, info.user?.profile?.display_name || info.user?.real_name || uid);
@@ -105,7 +146,7 @@ app.action("reveal", async ({ action, body, ack, client }) => {
   await client.chat.update({
     channel: session.channelId,
     ts: messageTs,
-    blocks: revealedBlocks(session.ticket, session.votes, userNames),
+    blocks: revealedBlocks(session.ticket, session.votes, userNames, session.discussLive),
     text: `Estimation complete: ${session.ticket}`,
   });
 

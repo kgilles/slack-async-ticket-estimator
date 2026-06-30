@@ -1,15 +1,48 @@
-import type { KnownBlock } from "@slack/web-api";
+import type { KnownBlock, View } from "@slack/web-api";
 
 const POINTS_ROW1 = ["1", "2", "3", "5"];
 const POINTS_ROW2 = ["8", "13", "21", "?"];
 
-function makeVoteButton(p: string, messageTs: string, selected: boolean) {
+function makeVoteButton(p: string, messageTs: string) {
   return {
     type: "button" as const,
     text: { type: "plain_text" as const, text: p },
     action_id: `vote_${p === "?" ? "question" : p}`,
     value: messageTs,
-    ...(selected ? { style: "primary" as const } : {}),
+  };
+}
+
+export function estimateModal(channelId: string, ticketPrefill = ""): View {
+  return {
+    type: "modal",
+    callback_id: "estimate_modal",
+    private_metadata: channelId,
+    title: { type: "plain_text", text: "New Estimation" },
+    submit: { type: "plain_text", text: "Start" },
+    close: { type: "plain_text", text: "Cancel" },
+    blocks: [
+      {
+        type: "input",
+        block_id: "ticket",
+        label: { type: "plain_text", text: "Ticket" },
+        element: {
+          type: "plain_text_input",
+          action_id: "ticket_input",
+          placeholder: { type: "plain_text", text: "Title or URL" },
+          ...(ticketPrefill ? { initial_value: ticketPrefill } : {}),
+        },
+      },
+      {
+        type: "input",
+        block_id: "voters",
+        label: { type: "plain_text", text: "Who's voting?" },
+        element: {
+          type: "multi_users_select",
+          action_id: "voters_input",
+          placeholder: { type: "plain_text", text: "Select team members" },
+        },
+      },
+    ],
   };
 }
 
@@ -18,12 +51,13 @@ export function votingBlocks(
   ticket: string,
   voteCount: number,
   discussCount: number,
-  selectedVote?: string,     // set on ephemerals to highlight the user's pick
-  discussLiveSelected?: boolean
+  totalVoters: number
 ): KnownBlock[] {
-  const statusParts = [`*${voteCount}* voted`];
-  if (discussCount > 0)
-    statusParts.push(`*${discussCount}* want${discussCount === 1 ? "s" : ""} to discuss live`);
+  const voted = `*${voteCount}* of *${totalVoters}* voted`;
+  const discuss =
+    discussCount > 0
+      ? ` · *${discussCount}* want${discussCount === 1 ? "s" : ""} to discuss live`
+      : "";
 
   return [
     {
@@ -31,18 +65,18 @@ export function votingBlocks(
       block_id: `estimate_${messageTs}`,
       text: {
         type: "mrkdwn",
-        text: `*Estimating:* ${ticket}\n_${statusParts.join(" · ")} — results hidden until revealed_`,
+        text: `*Estimating:* ${ticket}\n_${voted}${discuss} — results hidden until revealed_`,
       },
     },
     {
       type: "actions",
       block_id: `votes_row1_${messageTs}`,
-      elements: POINTS_ROW1.map((p) => makeVoteButton(p, messageTs, p === selectedVote)),
+      elements: POINTS_ROW1.map((p) => makeVoteButton(p, messageTs)),
     },
     {
       type: "actions",
       block_id: `votes_row2_${messageTs}`,
-      elements: POINTS_ROW2.map((p) => makeVoteButton(p, messageTs, p === selectedVote)),
+      elements: POINTS_ROW2.map((p) => makeVoteButton(p, messageTs)),
     },
     {
       type: "actions",
@@ -53,7 +87,6 @@ export function votingBlocks(
           text: { type: "plain_text", text: "Discuss Live" },
           action_id: "discuss_live",
           value: messageTs,
-          ...(discussLiveSelected ? { style: "primary" as const } : {}),
         },
         {
           type: "button",

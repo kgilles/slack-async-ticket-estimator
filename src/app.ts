@@ -1,140 +1,23 @@
 import "dotenv/config";
 import { App } from "@slack/bolt";
-import { createSession, getSession, deleteSession } from "./sessions.js";
-import { votingBlocks, revealedBlocks } from "./blocks.js";
+import type { WebClient } from "@slack/web-api";
+import { createSession, getSession, deleteSession, type Session } from "./sessions.js";
+import { estimateModal, votingBlocks, revealedBlocks } from "./blocks.js";
 
 const app = new App({
   token: process.env.SLACK_BOT_TOKEN,
   signingSecret: process.env.SLACK_SIGNING_SECRET,
 });
 
-app.command("/estimate", async ({ command, ack, respond, client }) => {
-  await ack();
+// ── Helpers ────────────────────────────────────────────────────────────────
 
-  const ticket = command.text.trim();
-  if (!ticket) {
-    await respond({ response_type: "ephemeral", text: "Usage: `/estimate <ticket title or URL>`" });
-    return;
-  }
+function allVotersResponded(session: Session): boolean {
+  return session.allowedVoters.every(
+    (uid) => session.votes.has(uid) || session.discussLive.has(uid)
+  );
+}
 
-  const result = await client.chat.postMessage({
-    channel: command.channel_id,
-    blocks: votingBlocks("placeholder", ticket, 0, 0),
-    text: `Estimating: ${ticket}`,
-  });
-
-  const messageTs = result.ts!;
-  createSession({
-    messageTs,
-    channelId: command.channel_id,
-    hostUserId: command.user_id,
-    ticket,
-  });
-
-  // Re-post with real ts so block values carry the session key
-  await client.chat.update({
-    channel: command.channel_id,
-    ts: messageTs,
-    blocks: votingBlocks(messageTs, ticket, 0, 0),
-    text: `Estimating: ${ticket}`,
-  });
-
-  // Seed a thread so teammates know where to discuss
-  await client.chat.postMessage({
-    channel: command.channel_id,
-    thread_ts: messageTs,
-    text: "Use this thread to discuss the ticket.",
-  });
-});
-
-// Matches vote_1, vote_2, vote_3, vote_5, vote_8, vote_13, vote_21, vote_question
-app.action(/^vote_/, async ({ action, body, ack, client }) => {
-  await ack();
-
-  const act = action as { action_id: string; value?: string };
-  const raw = act.action_id.replace(/^vote_/, "");
-  const pointValue = raw === "question" ? "?" : raw;
-  const messageTs = act.value!;
-
-  const session = getSession(messageTs);
-  if (!session || session.revealed) return;
-
-  const userId = body.user.id;
-  const wasDiscussing = session.discussLive.delete(userId);
-  session.votes.set(userId, pointValue);
-
-  await Promise.all([
-    client.chat.update({
-      channel: session.channelId,
-      ts: messageTs,
-      blocks: votingBlocks(messageTs, session.ticket, session.votes.size, session.discussLive.size),
-      text: `Estimating: ${session.ticket}`,
-    }),
-    client.chat.postEphemeral({
-      channel: session.channelId,
-      user: userId,
-      text: wasDiscussing
-        ? `You voted *${pointValue}*. Your discuss live flag was removed.`
-        : `You voted *${pointValue}*.`,
-    }),
-  ]);
-});
-
-app.action("discuss_live", async ({ action, body, ack, client }) => {
-  await ack();
-
-  const messageTs = (action as { value?: string }).value!;
-  const session = getSession(messageTs);
-  if (!session || session.revealed) return;
-
-  const userId = body.user.id;
-
-  if (session.discussLive.has(userId)) {
-    await client.chat.postEphemeral({
-      channel: session.channelId,
-      user: userId,
-      text: "You've already flagged this for live discussion.",
-    });
-    return;
-  }
-
-  const hadVote = session.votes.delete(userId);
-  session.discussLive.add(userId);
-
-  await Promise.all([
-    client.chat.update({
-      channel: session.channelId,
-      ts: messageTs,
-      blocks: votingBlocks(messageTs, session.ticket, session.votes.size, session.discussLive.size),
-      text: `Estimating: ${session.ticket}`,
-    }),
-    client.chat.postEphemeral({
-      channel: session.channelId,
-      user: userId,
-      text: hadVote
-        ? "You flagged this for live discussion. Your vote was removed."
-        : "You flagged this for live discussion.",
-    }),
-  ]);
-});
-
-app.action("reveal", async ({ action, body, ack, client }) => {
-  await ack();
-
-  const messageTs = (action as { value?: string }).value!;
-  const session = getSession(messageTs);
-  if (!session || session.revealed) return;
-
-  if (body.user.id !== session.hostUserId) {
-    await client.chat.postEphemeral({
-      channel: session.channelId,
-      user: body.user.id,
-      text: "Only the person who started this session can reveal the votes.",
-    });
-    return;
-  }
-
-  // Resolve display names for all voters + discuss-live users
+async function doReveal(session: Session, client: WebClient) {
   const allUserIds = new Set([...session.votes.keys(), ...session.discussLive]);
   const userNames = new Map<string, string>();
   await Promise.all(
@@ -152,13 +35,176 @@ app.action("reveal", async ({ action, body, ack, client }) => {
 
   await client.chat.update({
     channel: session.channelId,
-    ts: messageTs,
+    ts: session.messageTs,
     blocks: revealedBlocks(session.ticket, session.votes, userNames, session.discussLive),
     text: `Estimation complete: ${session.ticket}`,
   });
 
-  deleteSession(messageTs);
+  deleteSession(session.messageTs);
+}
+
+// ── /estimate → open modal ─────────────────────────────────────────────────
+
+app.command("/estimate", async ({ command, ack, client }) => {
+  await ack();
+  await client.views.open({
+    trigger_id: command.trigger_id,
+    view: estimateModal(command.channel_id, command.text.trim()),
+  });
 });
+
+// ── Modal submission → create session + post message ──────────────────────
+
+app.view("estimate_modal", async ({ view, ack, body, client }) => {
+  await ack();
+
+  const ticket = view.state.values.ticket.ticket_input.value!;
+  const allowedVoters = view.state.values.voters.voters_input.selected_users ?? [];
+  const channelId = view.private_metadata;
+
+  const result = await client.chat.postMessage({
+    channel: channelId,
+    blocks: votingBlocks("placeholder", ticket, 0, 0, allowedVoters.length),
+    text: `Estimating: ${ticket}`,
+  });
+
+  const messageTs = result.ts!;
+  createSession({ messageTs, channelId, hostUserId: body.user.id, ticket, allowedVoters });
+
+  await Promise.all([
+    client.chat.update({
+      channel: channelId,
+      ts: messageTs,
+      blocks: votingBlocks(messageTs, ticket, 0, 0, allowedVoters.length),
+      text: `Estimating: ${ticket}`,
+    }),
+    client.chat.postMessage({
+      channel: channelId,
+      thread_ts: messageTs,
+      text: "Use this thread to discuss the ticket.",
+    }),
+  ]);
+});
+
+// ── Vote ───────────────────────────────────────────────────────────────────
+
+app.action(/^vote_/, async ({ action, body, ack, client }) => {
+  await ack();
+
+  const act = action as { action_id: string; value?: string };
+  const raw = act.action_id.replace(/^vote_/, "");
+  const pointValue = raw === "question" ? "?" : raw;
+  const messageTs = act.value!;
+
+  const session = getSession(messageTs);
+  if (!session || session.revealed) return;
+
+  const userId = body.user.id;
+
+  if (session.allowedVoters.length && !session.allowedVoters.includes(userId)) {
+    await client.chat.postEphemeral({
+      channel: session.channelId,
+      user: userId,
+      text: "You're not a voter in this estimation session.",
+    });
+    return;
+  }
+
+  const wasDiscussing = session.discussLive.delete(userId);
+  session.votes.set(userId, pointValue);
+
+  await Promise.all([
+    client.chat.update({
+      channel: session.channelId,
+      ts: messageTs,
+      blocks: votingBlocks(messageTs, session.ticket, session.votes.size, session.discussLive.size, session.allowedVoters.length),
+      text: `Estimating: ${session.ticket}`,
+    }),
+    client.chat.postEphemeral({
+      channel: session.channelId,
+      user: userId,
+      text: wasDiscussing
+        ? `You voted *${pointValue}*. Your discuss live flag was removed.`
+        : `You voted *${pointValue}*.`,
+    }),
+  ]);
+
+  if (allVotersResponded(session)) await doReveal(session, client);
+});
+
+// ── Discuss Live ───────────────────────────────────────────────────────────
+
+app.action("discuss_live", async ({ action, body, ack, client }) => {
+  await ack();
+
+  const messageTs = (action as { value?: string }).value!;
+  const session = getSession(messageTs);
+  if (!session || session.revealed) return;
+
+  const userId = body.user.id;
+
+  if (session.allowedVoters.length && !session.allowedVoters.includes(userId)) {
+    await client.chat.postEphemeral({
+      channel: session.channelId,
+      user: userId,
+      text: "You're not a voter in this estimation session.",
+    });
+    return;
+  }
+
+  if (session.discussLive.has(userId)) {
+    await client.chat.postEphemeral({
+      channel: session.channelId,
+      user: userId,
+      text: "You've already flagged this for live discussion.",
+    });
+    return;
+  }
+
+  const hadVote = session.votes.delete(userId);
+  session.discussLive.add(userId);
+
+  await Promise.all([
+    client.chat.update({
+      channel: session.channelId,
+      ts: messageTs,
+      blocks: votingBlocks(messageTs, session.ticket, session.votes.size, session.discussLive.size, session.allowedVoters.length),
+      text: `Estimating: ${session.ticket}`,
+    }),
+    client.chat.postEphemeral({
+      channel: session.channelId,
+      user: userId,
+      text: hadVote
+        ? "You flagged this for live discussion. Your vote was removed."
+        : "You flagged this for live discussion.",
+    }),
+  ]);
+
+  if (allVotersResponded(session)) await doReveal(session, client);
+});
+
+// ── Manual reveal ──────────────────────────────────────────────────────────
+
+app.action("reveal", async ({ action, body, ack, client }) => {
+  await ack();
+
+  const messageTs = (action as { value?: string }).value!;
+  const session = getSession(messageTs);
+  if (!session || session.revealed) return;
+
+  if (body.user.id !== session.hostUserId) {
+    await client.chat.postEphemeral({
+      channel: session.channelId,
+      user: body.user.id,
+      text: "Only the person who started this session can reveal the votes.",
+    });
+    return;
+  }
+
+  await doReveal(session, client);
+});
+
+// ── Start ──────────────────────────────────────────────────────────────────
 
 (async () => {
   const port = Number(process.env.PORT) || 3000;

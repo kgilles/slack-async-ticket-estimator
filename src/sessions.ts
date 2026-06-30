@@ -3,8 +3,9 @@ export interface Session {
   channelId: string;
   hostUserId: string;
   ticket: string;
-  votes: Map<string, string>; // userId → point value
-  discussLive: Set<string>;   // userIds who want to discuss live
+  allowedVoters: string[];       // empty = unrestricted
+  votes: Map<string, string>;    // userId → point value
+  discussLive: Set<string>;      // userIds who want to discuss live
   revealed: boolean;
 }
 

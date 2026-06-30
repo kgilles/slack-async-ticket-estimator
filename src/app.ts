@@ -71,8 +71,7 @@ app.action(/^vote_/, async ({ action, body, ack, client }) => {
     client.chat.postEphemeral({
       channel: session.channelId,
       user: body.user.id,
-      text: `You voted ${pointValue}`,
-      blocks: votingBlocks(messageTs, session.ticket, session.votes.size, session.discussLive.size, pointValue),
+      text: `You voted *${pointValue}*.`,
     }),
   ]);
 });
@@ -90,7 +89,7 @@ app.action("discuss_live", async ({ action, body, ack, client }) => {
     await client.chat.postEphemeral({
       channel: session.channelId,
       user: userId,
-      text: "You've already flagged this ticket for live discussion.",
+      text: "You've already flagged this for live discussion.",
     });
     return;
   }
@@ -98,11 +97,6 @@ app.action("discuss_live", async ({ action, body, ack, client }) => {
   session.discussLive.add(userId);
 
   await Promise.all([
-    client.chat.postMessage({
-      channel: session.channelId,
-      thread_ts: messageTs,
-      text: `<@${userId}> wants to discuss this ticket live.`,
-    }),
     client.chat.update({
       channel: session.channelId,
       ts: messageTs,
@@ -112,8 +106,7 @@ app.action("discuss_live", async ({ action, body, ack, client }) => {
     client.chat.postEphemeral({
       channel: session.channelId,
       user: userId,
-      text: "You flagged this ticket for live discussion",
-      blocks: votingBlocks(messageTs, session.ticket, session.votes.size, session.discussLive.size, undefined, true),
+      text: "You flagged this for live discussion.",
     }),
   ]);
 });

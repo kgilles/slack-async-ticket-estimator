@@ -1,6 +1,7 @@
 import type { KnownBlock } from "@slack/web-api";
 
-const POINTS = ["1", "2", "3", "5", "8", "13", "21", "?"];
+const POINTS_ROW1 = ["1", "2", "3", "5"];
+const POINTS_ROW2 = ["8", "13", "21", "?"];
 
 export function votingBlocks(
   messageTs: string,
@@ -23,8 +24,18 @@ export function votingBlocks(
     },
     {
       type: "actions",
-      block_id: `votes_${messageTs}`,
-      elements: POINTS.map((p) => ({
+      block_id: `votes_row1_${messageTs}`,
+      elements: POINTS_ROW1.map((p) => ({
+        type: "button" as const,
+        text: { type: "plain_text" as const, text: p },
+        action_id: `vote_${p}`,
+        value: messageTs,
+      })),
+    },
+    {
+      type: "actions",
+      block_id: `votes_row2_${messageTs}`,
+      elements: POINTS_ROW2.map((p) => ({
         type: "button" as const,
         text: { type: "plain_text" as const, text: p },
         action_id: `vote_${p === "?" ? "question" : p}`,

@@ -59,7 +59,9 @@ app.action(/^vote_/, async ({ action, body, ack, client }) => {
   const session = getSession(messageTs);
   if (!session || session.revealed) return;
 
-  session.votes.set(body.user.id, pointValue);
+  const userId = body.user.id;
+  const wasDiscussing = session.discussLive.delete(userId);
+  session.votes.set(userId, pointValue);
 
   await Promise.all([
     client.chat.update({
@@ -70,8 +72,10 @@ app.action(/^vote_/, async ({ action, body, ack, client }) => {
     }),
     client.chat.postEphemeral({
       channel: session.channelId,
-      user: body.user.id,
-      text: `You voted *${pointValue}*.`,
+      user: userId,
+      text: wasDiscussing
+        ? `You voted *${pointValue}*. Your discuss live flag was removed.`
+        : `You voted *${pointValue}*.`,
     }),
   ]);
 });
@@ -94,6 +98,7 @@ app.action("discuss_live", async ({ action, body, ack, client }) => {
     return;
   }
 
+  const hadVote = session.votes.delete(userId);
   session.discussLive.add(userId);
 
   await Promise.all([
@@ -106,7 +111,9 @@ app.action("discuss_live", async ({ action, body, ack, client }) => {
     client.chat.postEphemeral({
       channel: session.channelId,
       user: userId,
-      text: "You flagged this for live discussion.",
+      text: hadVote
+        ? "You flagged this for live discussion. Your vote was removed."
+        : "You flagged this for live discussion.",
     }),
   ]);
 });

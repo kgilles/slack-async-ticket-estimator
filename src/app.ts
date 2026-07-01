@@ -68,6 +68,9 @@ app.view("estimate_modal", async ({ view, ack, body, client }) => {
   const allowedVoters = view.state.values.voters.voters_input.selected_users ?? [];
   const channelId = view.private_metadata;
 
+  // Ensure bot is in the channel (no-op if already a member; fails silently for private channels)
+  await client.conversations.join({ channel: channelId }).catch(() => {});
+
   const result = await client.chat.postMessage({
     channel: channelId,
     blocks: votingBlocks("placeholder", ticket, 0, 0, allowedVoters),

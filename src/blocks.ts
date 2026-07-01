@@ -51,13 +51,14 @@ export function votingBlocks(
   ticket: string,
   voteCount: number,
   discussCount: number,
-  totalVoters: number
+  allowedVoters: string[]
 ): KnownBlock[] {
-  const voted = `*${voteCount}* of *${totalVoters}* voted`;
+  const voted = `*${voteCount}* of *${allowedVoters.length}* voted`;
   const discuss =
     discussCount > 0
       ? ` · *${discussCount}* want${discussCount === 1 ? "s" : ""} to discuss live`
       : "";
+  const mentions = allowedVoters.map((uid) => `<@${uid}>`).join(" ");
 
   return [
     {
@@ -65,7 +66,7 @@ export function votingBlocks(
       block_id: `estimate_${messageTs}`,
       text: {
         type: "mrkdwn",
-        text: `*Estimating:* ${ticket}\n_${voted}${discuss} — results hidden until revealed_`,
+        text: `*Estimating:* ${ticket}\n${mentions}\n_${voted}${discuss} — results hidden until revealed_`,
       },
     },
     {

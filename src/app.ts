@@ -70,7 +70,7 @@ app.view("estimate_modal", async ({ view, ack, body, client }) => {
 
   const result = await client.chat.postMessage({
     channel: channelId,
-    blocks: votingBlocks("placeholder", ticket, 0, 0, allowedVoters.length),
+    blocks: votingBlocks("placeholder", ticket, 0, 0, allowedVoters),
     text: `Estimating: ${ticket}`,
   });
 
@@ -81,7 +81,7 @@ app.view("estimate_modal", async ({ view, ack, body, client }) => {
     client.chat.update({
       channel: channelId,
       ts: messageTs,
-      blocks: votingBlocks(messageTs, ticket, 0, 0, allowedVoters.length),
+      blocks: votingBlocks(messageTs, ticket, 0, 0, allowedVoters),
       text: `Estimating: ${ticket}`,
     }),
     client.chat.postMessage({
@@ -123,7 +123,7 @@ app.action(/^vote_/, async ({ action, body, ack, client }) => {
     client.chat.update({
       channel: session.channelId,
       ts: messageTs,
-      blocks: votingBlocks(messageTs, session.ticket, session.votes.size, session.discussLive.size, session.allowedVoters.length),
+      blocks: votingBlocks(messageTs, session.ticket, session.votes.size, session.discussLive.size, session.allowedVoters),
       text: `Estimating: ${session.ticket}`,
     }),
     client.chat.postEphemeral({
@@ -174,7 +174,7 @@ app.action("discuss_live", async ({ action, body, ack, client }) => {
     client.chat.update({
       channel: session.channelId,
       ts: messageTs,
-      blocks: votingBlocks(messageTs, session.ticket, session.votes.size, session.discussLive.size, session.allowedVoters.length),
+      blocks: votingBlocks(messageTs, session.ticket, session.votes.size, session.discussLive.size, session.allowedVoters),
       text: `Estimating: ${session.ticket}`,
     }),
     client.chat.postEphemeral({

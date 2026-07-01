@@ -17,7 +17,7 @@ function allVotersResponded(session: Session): boolean {
   );
 }
 
-async function doReveal(session: Session, client: WebClient, auto = false) {
+async function doReveal(session: Session, client: WebClient) {
   const allUserIds = new Set([...session.votes.keys(), ...session.discussLive]);
   const userNames = new Map<string, string>();
   await Promise.all(
@@ -40,13 +40,11 @@ async function doReveal(session: Session, client: WebClient, auto = false) {
     text: `Estimation complete: ${session.ticket}`,
   });
 
-  if (auto) {
-    await client.chat.postMessage({
-      channel: session.channelId,
-      thread_ts: session.messageTs,
-      text: "All votes are in — results revealed above.",
-    });
-  }
+  await client.chat.postMessage({
+    channel: session.channelId,
+    thread_ts: session.messageTs,
+    text: "All votes are in — results revealed above.",
+  });
 
   deleteSession(session.messageTs);
 }
@@ -137,7 +135,7 @@ app.action(/^vote_/, async ({ action, body, ack, client }) => {
     }),
   ]);
 
-  if (allVotersResponded(session)) await doReveal(session, client, true);
+  if (allVotersResponded(session)) await doReveal(session, client);
 });
 
 // ── Discuss Live ───────────────────────────────────────────────────────────
@@ -188,7 +186,7 @@ app.action("discuss_live", async ({ action, body, ack, client }) => {
     }),
   ]);
 
-  if (allVotersResponded(session)) await doReveal(session, client, true);
+  if (allVotersResponded(session)) await doReveal(session, client);
 });
 
 // ── Manual reveal ──────────────────────────────────────────────────────────
